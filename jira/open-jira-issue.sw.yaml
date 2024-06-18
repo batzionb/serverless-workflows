@@ -1,0 +1,79 @@
+id: open-jira-issue
+version: "1.0"
+specVersion: "0.8"
+name: "Open Jira issue"
+description: Open jira issue
+dataInputSchema: schemas/request-vm-cnv__main-schema.json
+functions:
+  - name: jiraCreateIssue
+    operation: specs/jira-openapi.json#createIssue
+  - name: jiraGetIssue
+    operation: specs/jira-openapi.json#getIssue
+  - name: print
+    type: custom
+    operation: sysout
+start: Open issue on JIRA
+states:
+  - name: Open issue on JIRA
+    type: operation
+    actions:
+      - name: callbackAction
+        functionRef:
+          refName: jiraCreateIssue
+          arguments:
+            fields:
+              description: "create jira"
+              issuetype:
+                name: Task
+              labels:
+                - backstage-workflow
+                - '"workflowId=" + $WORKFLOW.instanceId'
+              project:
+                key: .inputs.projectKey
+              summary: "create jira"
+        actionDataFilter:
+          toStateData: .jiraCreateIssueResult
+    transition: Poll issue
+  - name: Poll issue
+    type: operation
+    actions:
+      - name: get issue
+        actionDataFilter:
+          toStateData: .jiraGetIssueResult
+        functionRef:
+          refName: jiraGetIssue
+          arguments:
+            issueIdOrKey: .jiraCreateIssueResult.id
+        sleep:
+          before: PT10S
+    transition: Check issue done
+  - name: Check issue done
+    type: switch
+    dataConditions:
+      - name: Jira issue approved
+        condition: .jiraGetIssueResult.fields.status.statusCategory.key == "done" and .jiraGetIssueResult.fields.resolution.name != "Done"
+        transition: Print Jira issue approved
+      - name: Jira issue denied
+        condition: .jiraGetIssueResult.fields.status.statusCategory.key == "done" and .jiraGetIssueResult.fields.resolution.name == "Done"
+        transition: Print Jira issue rejected
+    defaultCondition:
+      transition:
+        nextState: Poll issue
+  - name: Print Jira issue approved
+    type: operation
+    actions:
+      - name: print
+        functionRef:
+          refName: print
+          arguments:
+            message: "jira issue approved"
+    end: true
+  - name: Print Jira issue rejected
+    type: operation
+    actions:
+      - name: print
+        functionRef:
+          refName: print
+          arguments:
+            message: "jira issue rejected"
+    end: true
